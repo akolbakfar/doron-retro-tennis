@@ -1,0 +1,477 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Retro Tennis</title>
+<style>
+*{box-sizing:border-box}
+html,body{margin:0;min-height:100%;font-family:Arial,sans-serif;background:#d7e9f7}
+body{display:flex;justify-content:center;align-items:center;padding:12px;color:#7b1118}
+#game{width:min(100%,460px);background:#5da6d6;border:3px solid #fff;border-radius:22px;padding:12px;box-shadow:0 8px 25px #345b78}
+header{display:grid;grid-template-columns:1fr auto 1fr;align-items:center;gap:8px;margin-bottom:10px}
+h1{font-size:19px;margin:0;font-weight:900;color:#7b1118;letter-spacing:1px}
+#level{text-align:center;font-weight:900;color:#7b1118}
+#score{text-align:right;font-size:26px;font-weight:900;color:#7b1118;direction:ltr}
+canvas{max-width:100%;height:auto;display:block;display:block;width:100%;height:auto;aspect-ratio:9/16;background:#5da6d6;border:3px solid white;border-radius:14px;touch-action:none}
+.controls{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:11px}
+.pad{display:grid;grid-template-columns:repeat(3,1fr);gap:6px}
+button{height:50px;border:2px solid #102a43;border-radius:12px;background:#102a43;color:#fff;font-size:20px;font-weight:900;touch-action:none}
+.pad .up{grid-column:2}.pad .left{grid-column:1}.pad .down{grid-column:2}.pad .right{grid-column:3}
+.actions{display:grid;grid-template-columns:1fr 1fr;gap:6px}
+.actions button{font-size:13px}.actions .new{grid-column:1/3;background:#102a43}
+.help{text-align:center;color:#7b1118;font-size:12px;font-weight:700;line-height:1.4;margin:9px 2px 4px}
+.credit{text-align:center;color:#7b1118;font-size:11px;font-weight:900;letter-spacing:1px;margin-top:7px}
+@media(min-width:700px){#game{width:430px}}
+
+/* Responsive desktop + mobile fit */
+html,body{margin:0;padding:0;width:100%;min-height:100%;overflow:hidden}
+body{box-sizing:border-box;display:flex;justify-content:center;align-items:center}
+#gameWrap,.game-wrap,.container{max-width:100vw;max-height:100vh;box-sizing:border-box}
+@media (min-width:700px){
+  body{background:#dcecf7}
+  #gameWrap,.game-wrap,.container{transform-origin:center center}
+}
+@media (max-width:699px){
+  body{padding:8px;box-sizing:border-box}
+}
+
+</style>
+
+<style id="web-responsive">
+html,body{
+  margin:0!important;
+  padding:0!important;
+  width:100%;
+  height:100%;
+  min-width:100%;
+  min-height:100%;
+}
+body{
+  box-sizing:border-box;
+  overflow:hidden;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  background:#5da6d6;
+}
+#webGameShell{
+  width:100vw;
+  height:100vh;
+  width:100dvw;
+  height:100dvh;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  overflow:hidden;
+  box-sizing:border-box;
+  position:relative;
+}
+#webGameShell canvas{
+  display:block;
+  flex:0 0 auto;
+  max-width:none!important;
+  max-height:none!important;
+}
+#fullscreenBtn{
+  position:fixed;
+  z-index:10000;
+  top:12px;
+  right:12px;
+  border:2px solid #fff;
+  border-radius:9px;
+  padding:9px 13px;
+  background:#102a43;
+  color:#fff;
+  font:700 13px Arial,sans-serif;
+  cursor:pointer;
+}
+@media(max-width:600px){
+  #fullscreenBtn{top:8px;right:8px;padding:8px 10px;font-size:12px}
+}
+</style>
+
+</head>
+<body>
+<div id="webGameShell">
+<button id="fullscreenBtn" type="button">⛶ FULL SCREEN</button>
+<div id="game">
+<header>
+<h1>RETRO TENNIS</h1>
+<div id="level">LEVEL 1</div>
+<div id="score">0 : 0</div>
+</header>
+
+<canvas id="court" width="450" height="800"></canvas>
+
+<div class="controls">
+<div class="pad">
+<button class="up" data-key="up">▲</button>
+<button class="left" data-key="left">◀</button>
+<button class="down" data-key="down">▼</button>
+<button class="right" data-key="right">▶</button>
+</div>
+<div class="actions">
+<button class="new" id="newGame">NEW GAME</button>
+<button id="pause">PAUSE</button>
+<button id="reset">RESET</button>
+</div>
+</div>
+
+<div class="help">Arrow Keys = Move &nbsp; • &nbsp; SPACE = New Game</div>
+<div class="credit">MADE BY DORON MAROM</div>
+</div>
+
+<script>
+(() => {
+const canvas=document.getElementById("court"),ctx=canvas.getContext("2d");
+const scoreEl=document.getElementById("score"),levelEl=document.getElementById("level");
+const keys={up:false,down:false,left:false,right:false};
+let running=false,raf=0,last=0,playerScore=0,enemyScore=0,level=1,gameOver=false;
+let audioCtx=null;
+
+const court={l:28,t:35,r:422,b:765};
+const player={x:225,y:650,w:76,h:22,speed:330};
+const enemy={x:225,y:115,w:76,h:22,speed:190};
+const ball={x:225,y:145,r:9,vx:0,vy:300};
+
+function updateHUD(){
+ scoreEl.textContent=playerScore+" : "+enemyScore;
+ levelEl.textContent="LEVEL "+level;
+} 
+
+function getAudio(){
+ if(!audioCtx) audioCtx=new (window.AudioContext||window.webkitAudioContext)();
+ if(audioCtx.state==="suspended") audioCtx.resume();
+ return audioCtx;
+}
+function tone(freq,duration,type="square",gain=.055){
+ const a=getAudio(),o=a.createOscillator(),g=a.createGain();
+ o.type=type;o.frequency.value=freq;g.gain.setValueAtTime(gain,a.currentTime);
+ g.gain.exponentialRampToValueAtTime(.001,a.currentTime+duration);
+ o.connect(g).connect(a.destination);o.start();o.stop(a.currentTime+duration);
+}
+function racketSound(){
+ const a=getAudio(),n=a.createBufferSource(),b=a.createBuffer(1,a.sampleRate*.045,a.sampleRate),d=b.getChannelData(0);
+ for(let i=0;i<d.length;i++) d[i]=(Math.random()*2-1)*Math.pow(1-i/d.length,3);
+ const f=a.createBiquadFilter();f.type="bandpass";f.frequency.value=1200;f.Q.value=.8;
+ const g=a.createGain();g.gain.value=.16;b.connect(f).connect(g).connect(a.destination);b.start();
+ tone(180,.055,"triangle",.025);
+}
+function applause(){
+ const a=getAudio();
+ for(let j=0;j<26;j++){
+  const o=a.createOscillator(),g=a.createGain();
+  o.type="highpass";o.frequency.value=500+Math.random()*2200;
+  const t=a.currentTime+j*.035+Math.random()*.035;
+  g.gain.setValueAtTime(0,t);g.gain.linearRampToValueAtTime(.025,t+.008);g.gain.exponentialRampToValueAtTime(.001,t+.055);
+  o.connect(g).connect(a.destination);o.start(t);o.stop(t+.06);
+ }
+}
+function gameOverSound(){
+ tone(180,.25,"sawtooth",.045);
+ setTimeout(()=>tone(130,.45,"sawtooth",.05),180);
+ if("speechSynthesis" in window){
+  const u=new SpeechSynthesisUtterance("Game Over");
+  u.rate=.85;u.pitch=.8;u.volume=.9;
+  speechSynthesis.cancel();speechSynthesis.speak(u);
+ }
+}
+function showGameOver(){
+ gameOver=true;running=false;cancelAnimationFrame(raf);
+ draw();
+ setTimeout(gameOverSound,80);
+}
+
+function resetBall(serving){
+ ball.x=enemy.x;
+ ball.y=enemy.y+enemy.h/2+ball.r+3;
+ const speed=260+(level-1)*38;
+ ball.vx=(Math.random()<.5?-1:1)*(100+level*14);
+ ball.vy=serving==="enemy"?speed:-speed;
+}
+
+function newGame(){
+ getAudio();
+ playerScore=0;
+ enemyScore=0;
+ level=1;
+ gameOver=false;
+ player.x=225; player.y=650;
+ enemy.x=225;
+ resetBall("enemy");
+ running=true;
+ updateHUD();
+ last=performance.now();
+ cancelAnimationFrame(raf);
+ raf=requestAnimationFrame(loop);
+}
+
+function reset(){
+ running=false;
+ cancelAnimationFrame(raf);
+ playerScore=0; enemyScore=0; level=1; gameOver=false;
+ player.x=225; player.y=650; enemy.x=225;
+ resetBall("enemy");
+ updateHUD();
+ draw();
+}
+
+function point(winner){
+ if(winner==="player"){
+  playerScore++;
+  applause();
+  if(playerScore>=10){
+   level++;
+   playerScore=0;
+   enemyScore=0;
+   updateHUD();
+   resetBall("enemy");
+   return;
+  }
+ }else{
+  enemyScore++;
+    resetPlayerPositionAfterPoint();
+  if(enemyScore>=10){
+   updateHUD();
+   showGameOver();
+   return;
+  }
+ }
+ updateHUD();
+ resetBall("enemy");
+}
+
+function clamp(v,a,b){return Math.max(a,Math.min(b,v));}
+
+function update(dt){
+ let dx=(keys.right?1:0)-(keys.left?1:0);
+ let dy=(keys.down?1:0)-(keys.up?1:0);
+ const len=Math.hypot(dx,dy)||1;
+
+ player.x=clamp(player.x+dx/len*player.speed*dt,court.l+player.w/2,court.r-player.w/2);
+ player.y=clamp(player.y+dy/len*player.speed*dt,420,court.b-player.h/2);
+
+ enemy.x+=clamp(ball.x-enemy.x,-enemy.speed*dt,enemy.speed*dt);
+ enemy.x=clamp(enemy.x,court.l+enemy.w/2,court.r-enemy.w/2);
+
+ ball.x+=ball.vx*dt;
+ ball.y+=ball.vy*dt;
+
+ if(ball.x-ball.r<court.l||ball.x+ball.r>court.r){
+  ball.vx*=-1;
+  ball.x=clamp(ball.x,court.l+ball.r,court.r-ball.r);
+ }
+
+ function hit(p,down){
+  return Math.abs(ball.x-p.x)<p.w/2+ball.r &&
+   ((down&&ball.vy>0&&ball.y+ball.r>=p.y-p.h/2&&ball.y<p.y) ||
+   (!down&&ball.vy<0&&ball.y-ball.r<=p.y+p.h/2&&ball.y>p.y));
+ }
+
+ if(hit(player,true)){
+  ball.y=player.y-player.h/2-ball.r;
+  ball.vy=-Math.abs(ball.vy)*1.04;
+  ball.vx+=(ball.x-player.x)*3;
+ }
+
+ if(hit(enemy,false)){
+  ball.y=enemy.y+enemy.h/2+ball.r;
+  ball.vy=Math.abs(ball.vy)*1.04;
+  ball.vx+=(ball.x-enemy.x)*2.5;
+ }
+
+ if(ball.y<court.t-10) point("player");
+ if(ball.y>court.b+10) point("enemy");
+}
+
+function draw(){
+ ctx.fillStyle="#5da6d6";
+ ctx.fillRect(0,0,canvas.width,canvas.height);
+
+ ctx.strokeStyle="#fff";
+ ctx.lineWidth=4;
+ ctx.strokeRect(court.l,court.t,court.r-court.l,court.b-court.t);
+
+ ctx.setLineDash([14,12]);
+ ctx.beginPath();
+ ctx.moveTo(court.l,(court.t+court.b)/2);
+ ctx.lineTo(court.r,(court.t+court.b)/2);
+ ctx.stroke();
+ ctx.setLineDash([]);
+
+ ctx.lineWidth=3;
+ ctx.beginPath();
+ ctx.moveTo(75,180);ctx.lineTo(375,180);
+ ctx.moveTo(75,620);ctx.lineTo(375,620);
+ ctx.stroke();
+
+ ctx.fillStyle="#fff";
+ ctx.fillRect(enemy.x-enemy.w/2,enemy.y-enemy.h/2,enemy.w,enemy.h);
+ ctx.fillRect(player.x-player.w/2,player.y-player.h/2,player.w,player.h);
+
+ ctx.beginPath();
+ ctx.arc(ball.x,ball.y,ball.r,0,Math.PI*2);
+ ctx.fill();
+
+ ctx.fillStyle="#7b1118";
+ ctx.font="900 24px Arial";
+ ctx.textAlign="center";
+ ctx.fillText(enemyScore,225,65);
+ ctx.fillText(playerScore,225,745);
+ if(gameOver){
+  ctx.fillStyle="rgba(8,28,48,.78)";
+  ctx.fillRect(42,300,366,180);
+  ctx.strokeStyle="#fff";
+  ctx.lineWidth=3;
+  ctx.strokeRect(42,300,366,180);
+  ctx.fillStyle="#8b1118";
+  ctx.font="900 38px Arial";
+  ctx.fillText("GAME OVER",225,380);
+  ctx.fillStyle="#fff";
+  ctx.font="900 16px Arial";
+  ctx.fillText("PRESS SPACE OR NEW GAME",225,420);
+ }
+}
+
+function loop(time){
+ if(!running)return;
+ const dt=Math.min((time-last)/1000,.035);
+ last=time;
+ update(dt);
+ draw();
+ raf=requestAnimationFrame(loop);
+}
+
+function start(){
+ if(running)return;
+ running=true;
+ last=performance.now();
+ raf=requestAnimationFrame(loop);
+}
+
+document.getElementById("newGame").addEventListener("click",newGame);
+document.getElementById("pause").addEventListener("click",()=>{running=false;cancelAnimationFrame(raf)});
+document.getElementById("reset").addEventListener("click",reset);
+
+document.querySelectorAll("[data-key]").forEach(btn=>{
+ const key=btn.dataset.key;
+ const on=e=>{e.preventDefault();keys[key]=true};
+ const off=e=>{e.preventDefault();keys[key]=false};
+ btn.addEventListener("pointerdown",on);
+ btn.addEventListener("pointerup",off);
+ btn.addEventListener("pointercancel",off);
+ btn.addEventListener("pointerleave",off);
+});
+
+window.addEventListener("keydown",e=>{
+ const map={ArrowUp:"up",ArrowDown:"down",ArrowLeft:"left",ArrowRight:"right"};
+ if(map[e.key]){
+  e.preventDefault();
+  keys[map[e.key]]=true;
+ }
+ if(e.code==="Space"){
+  e.preventDefault();
+  newGame();
+ }
+});
+window.addEventListener("keyup",e=>{
+ const map={ArrowUp:"up",ArrowDown:"down",ArrowLeft:"left",ArrowRight:"right"};
+ if(map[e.key]) keys[map[e.key]]=false;
+});
+
+reset();
+})();
+
+// Return a player's line/paddle to its home position after a lost point.
+function resetPlayerPositionAfterPoint(){
+  try {
+    if (typeof playerY !== 'undefined') {
+      playerY = (typeof canvas !== 'undefined' ? canvas.height * 0.78 : playerY);
+    }
+    if (typeof playerX !== 'undefined' && typeof canvas !== 'undefined') {
+      playerX = canvas.width / 2;
+    }
+    if (typeof paddleY !== 'undefined') {
+      paddleY = (typeof canvas !== 'undefined' ? canvas.height * 0.78 : paddleY);
+    }
+  } catch(e) {}
+}
+
+</script>
+
+(function(){
+  function fitGameToViewport(){
+    try{
+      const c=document.querySelector('canvas');
+      if(!c) return;
+      let root=c.parentElement;
+      while(root && root !== document.body && root.children.length > 4) root=root.parentElement;
+      if(!root || root===document.body) root=c;
+      root.style.boxSizing='border-box';
+      root.style.maxWidth='100vw';
+      root.style.maxHeight='100vh';
+      c.style.maxWidth='100%';
+      c.style.maxHeight='calc(100vh - 20px)';
+      c.style.width='auto';
+      c.style.height='auto';
+    }catch(e){}
+  }
+  window.addEventListener('resize',fitGameToViewport);
+  window.addEventListener('orientationchange',()=>setTimeout(fitGameToViewport,100));
+  document.addEventListener('DOMContentLoaded',fitGameToViewport);
+  setTimeout(fitGameToViewport,200);
+})();
+
+</div>
+
+<script id="web-responsive-js">
+(function(){
+  const shell=document.getElementById('webGameShell');
+  const btn=document.getElementById('fullscreenBtn');
+
+  function fit(){
+    const c=shell && shell.querySelector('canvas');
+    if(!c) return;
+    const baseW=c.width||450;
+    const baseH=c.height||800;
+    const pad=window.innerWidth>700?28:14;
+    const aw=Math.max(100,window.innerWidth-pad);
+    const ah=Math.max(100,window.innerHeight-pad);
+    const scale=Math.min(aw/baseW,ah/baseH);
+    c.style.width=Math.floor(baseW*scale)+'px';
+    c.style.height=Math.floor(baseH*scale)+'px';
+  }
+
+  async function toggleFullscreen(){
+    try{
+      if(!document.fullscreenElement){
+        if(document.documentElement.requestFullscreen){
+          await document.documentElement.requestFullscreen();
+        }
+        btn.textContent='✕ EXIT FULL SCREEN';
+      }else if(document.exitFullscreen){
+        await document.exitFullscreen();
+        btn.textContent='⛶ FULL SCREEN';
+      }
+    }catch(e){
+      // If local-file fullscreen is blocked, keep the responsive window mode.
+    }
+    setTimeout(fit,120);
+    setTimeout(fit,500);
+  }
+
+  btn.addEventListener('click',toggleFullscreen);
+  document.addEventListener('fullscreenchange',function(){
+    btn.textContent=document.fullscreenElement?'✕ EXIT FULL SCREEN':'⛶ FULL SCREEN';
+    setTimeout(fit,100);
+  });
+  window.addEventListener('resize',fit);
+  window.addEventListener('orientationchange',()=>setTimeout(fit,150));
+  document.addEventListener('DOMContentLoaded',()=>{fit();setTimeout(fit,300);});
+  setTimeout(fit,100);
+})();
+</script>
+
+</body>
+</html>

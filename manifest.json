@@ -1,0 +1,9 @@
+{
+  "name": "Doron Retro Tennis",
+  "short_name": "Retro Tennis",
+  "start_url": ".",
+  "display": "fullscreen",
+  "background_color": "#5da6d6",
+  "theme_color": "#5da6d6",
+  "orientation": "portrait"
+}
